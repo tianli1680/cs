@@ -1,0 +1,100 @@
+name: Extract and Store M3U Groups
+
+on:
+  workflow_dispatch:  # 手动触发
+  schedule:
+    - cron: '0 0 * * *'  # 每天自动运行
+
+jobs:
+  extract-m3u-groups:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        persist-credentials: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests m3u8
+
+    - name: Extract M3U groups and create files
+      env:
+        M3U_URL: "https://fy.188766.xyz/?url=https://live.188766.xyz&mishitong=true&mima=bingchawusifengxian&huikan=1"
+      run: |
+        python -c "
+import requests
+import re
+import os
+
+# 获取M3U内容
+url = '${{ env.M3U_URL }}'
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+}
+
+try:
+    response = requests.get(url, headers=headers, timeout=30)
+    response.encoding = 'utf-8'
+    content = response.text
+    
+    if not content:
+        print('Error: Empty response')
+        exit(1)
+        
+    print(f'Downloaded content length: {len(content)}')
+    
+    # 按分组分割内容
+    groups = []
+    current_group = []
+    
+    lines = content.split('\\n')
+    for line in lines:
+        line = line.strip()
+        if line.startswith('#EXTINF'):
+            # 检查是否是新的分组开始
+            if 'group-title=' in line.lower():
+                if current_group:
+                    groups.append('\\n'.join(current_group))
+                current_group = [line]
+            else:
+                current_group.append(line)
+        elif line and not line.startswith('#EXTM3U'):
+            current_group.append(line)
+    
+    # 添加最后一个分组
+    if current_group:
+        groups.append('\\n'.join(current_group))
+    
+    print(f'Found {len(groups)} groups')
+    
+    # 为每个分组创建文件
+    for i, group_content in enumerate(groups, 1):
+        filename = f'live{i}.m3u'
+        full_content = '#EXTM3U\\n' + group_content
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(full_content)
+        
+        print(f'Created {filename} with {len(group_content)} characters')
+        
+except Exception as e:
+    print(f'Error: {e}')
+    exit(1)
+        "
+
+    - name: Commit and push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add live*.m3u
+        git diff --staged --quiet || git commit -m "Update M3U group files - $(date)"
+        git push
