@@ -22,7 +22,7 @@ jobs:
     - name: Download M3U playlist
       run: |
         # 替换 YOUR_PLAYBACK_URL 为实际的播放链接
-        curl -s -L "YOUR_PLAYBACK_URL" -o live.m3u
+        curl -s -L "fy.188766.xyz/?url=https://live.188766.xyz&mishitong=true&mima=bingchawusifengxian&huikan=1" -o live.m3u
         
         # 检查文件是否下载成功
         if [ ! -s live.m3u ]; then
