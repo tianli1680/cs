@@ -1,0 +1,43 @@
+name: Debug M3U Update
+
+on: [workflow_dispatch]
+
+jobs:
+  debug-update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Debug info
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Files in root:"
+        ls -la
+        echo "Git status:"
+        git status
+        
+    - name: Download test file
+      run: |
+        # 先创建一个测试文件
+        echo "#EXTM3U" > live.m3u
+        echo "#EXTINF:-1,Test Channel" >> live.m3u
+        echo "https://example.com/stream" >> live.m3u
+        
+    - name: Verify test file
+      run: |
+        echo "Current files:"
+        ls -la
+        echo "Test file content:"
+        cat live.m3u
+        
+    - name: Commit test file
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@users.noreply.github.com"
+        git add live.m3u
+        git commit -m "Add test M3U file"
+        git push
