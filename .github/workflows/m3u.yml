@@ -1,0 +1,51 @@
+name: Update M3U Playlist
+
+on:
+  workflow_dispatch:  # 允许手动触发
+  schedule:
+    # 每天凌晨2点自动运行（UTC时间）
+    - cron: '0 2 * * *'
+  push:
+    branches: [ main ]
+
+jobs:
+  update-m3u:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write  # 授予仓库内容写入权限
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download M3U playlist
+      run: |
+        # 替换 YOUR_PLAYBACK_URL 为实际的播放链接
+        curl -s -L "YOUR_PLAYBACK_URL" -o live.m3u
+        
+        # 检查文件是否下载成功
+        if [ ! -s live.m3u ]; then
+          echo "Error: Failed to download M3U file"
+          exit 1
+        fi
+        
+        # 显示文件基本信息
+        echo "Downloaded M3U file info:"
+        ls -la live.m3u
+        echo "First 10 lines:"
+        head -10 live.m3u
+        
+    - name: Commit and push if changed
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # 检查文件是否有变化
+        if git diff --quiet; then
+          echo "No changes to commit"
+        else
+          git add live.m3u
+          git commit -m "Update M3U playlist - $(date +'%Y-%m-%d %H:%M:%S')"
+          git push
+        fi
