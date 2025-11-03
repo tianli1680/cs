@@ -202,7 +202,7 @@
 {"name": "Ⓜ️┃靳学领「直播1」","type": 0,"url": "https://gitee.com/jin-xueling/lingl/raw/master/hu.txt","playerType":1},	
 {"name": "Ⓜ️┃靳学领「直播2」","type": 0,"url": "https://gitee.com/jin-xueling/cinematography/raw/master/json.txt","playerType":1},
 {"name": "Ⓜ️┃靳学领「直播3」","type": 0,"url": "https://gitee.com/jin-xueling/cinematography/raw/master/lc2.txt","playerType":1},
-{"name": "🀄️┃Mursor「肥羊直播」","type": 0,"url": "https://gh.catmak.name/https://raw.githubusercontent.com/alantang1977/aLIVE/refs/heads/main/iptv.m3u","ua": "okHttp/Mursor-1.0.0","timeout": 10,"playerType": 1},
+{"name": "🀄️┃Mursor「肥羊直播」","type": 0,"url": "https://live.ottiptv.cc/iptv.m3u?userid=8137863657&sign=2c8d82c9f17f480726d4770be9d0fb33fd0fcb31e1024448c36663605ea6a3f99e5bd467b68c287e3f0c07f85b95a188139aa3f19e227e251dc707bce0ededaab73ceeaddf6195&auth_token=54741b289e946919fc1c34ca88db58a4","ua": "okHttp/Mod-1.4.0.0","timeout": 10,"playerType": 1},
 {"name": "🗝️┃淘IPTV「全网通播」","type": 0,"url": "https://gitee.com/junchao321/private/raw/master/JS/长苏影视（全网通版）.txt","playerType":1},
 {"name": "🚇┃淘IPTV「快秒直播」","type": 0,"url": "https://gitee.com/junchao321/private/raw/master/JS/直播接口测试.txt","playerType":1},
 {"name": "🎣┃台湾直播","api":"csp_MQiTV","ext":"https://59.125.210.231:4433","jar":"./jar/custom_spider.jar","epg": "http://iptv.52sw.top:668/?ch={name}&date={date}","logo":"https://epg.112114.xyz/logo/{name}.png"},
