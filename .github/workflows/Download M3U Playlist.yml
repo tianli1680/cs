@@ -1,0 +1,145 @@
+name: Download M3U Playlist
+
+on:
+  workflow_dispatch:  # 允许手动触发
+  schedule:
+    # 每天凌晨3点自动执行（UTC时间）
+    - cron: '0 3 * * *'
+  push:
+    branches: [ main, master ]
+    paths:
+      - '.github/workflows/download-m3u.yml'
+
+# 设置必要的权限
+permissions:
+  contents: write  # 允许写入仓库内容
+  actions: read    # 允许读取actions（可选）
+  checks: read     # 允许读取检查状态（可选）
+
+jobs:
+  download-m3u:
+    runs-on: ubuntu-latest
+    
+    # 也可以在job级别设置权限
+    permissions:
+      contents: write  # 这个job需要写入权限
+    
+    steps:
+    - name: Checkout repository with write permissions
+      uses: actions/checkout@v4
+      with:
+        # 获取所有分支的历史记录
+        fetch-depth: 0
+        # 使用具有写入权限的token
+        token: ${{ secrets.GITHUB_TOKEN }}
+        # 如果需要推送到其他分支，可以取消注释下面这行
+        # ref: main
+        
+    - name: Setup environment
+      run: |
+        echo "工作流开始时间: $(date)"
+        echo "仓库: ${{ github.repository }}"
+        echo "触发者: ${{ github.actor }}"
+        
+    - name: Download M3U playlist
+      id: download
+      run: |
+        echo "正在下载 M3U 播放列表..."
+        
+        # 下载 M3U 文件，添加超时和重试机制
+        curl -s -L --max-time 30 --retry 2 \
+          "http://zizi.dpdns.org/cs.php?key=Ku0VIKlbNHX9&type=m3u" \
+          -o live.m3u
+          
+        # 检查下载是否成功
+        if [ $? -eq 0 ] && [ -f "live.m3u" ]; then
+          echo "✅ 文件下载成功！"
+          
+          # 显示文件信息
+          LINE_COUNT=$(wc -l < live.m3u 2>/dev/null || echo "0")
+          echo "文件行数: $LINE_COUNT"
+          
+          # 设置文件权限为读写（664：rw-rw-r--）
+          chmod 664 live.m3u
+          echo "文件权限已设置为 664 (rw-rw-r--)"
+          
+          # 验证权限
+          echo "当前文件权限:"
+          ls -la live.m3u
+          
+          # 创建输出变量供后续步骤使用
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          
+          # 显示文件前几行（用于调试）
+          if [ $LINE_COUNT -gt 0 ]; then
+            echo "文件内容预览（前3行）:"
+            head -3 live.m3u
+          fi
+        else
+          echo "❌ 文件下载失败！"
+          echo "has_changes=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+    - name: Check for changes
+      if: steps.download.outputs.has_changes == 'true'
+      id: check-changes
+      run: |
+        echo "检查文件是否有变化..."
+        
+        # 检查git状态
+        git status
+        
+        # 检查live.m3u文件是否有变化
+        if git diff --name-only | grep -q "live.m3u"; then
+          echo "检测到live.m3u有变化"
+          echo "file_changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "live.m3u没有变化"
+          echo "file_changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Configure Git for committing
+      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'true'
+      run: |
+        echo "配置Git用户信息..."
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        
+    - name: Commit and push changes
+      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'true'
+      run: |
+        echo "提交更改到仓库..."
+        
+        # 添加文件到暂存区
+        git add live.m3u
+        
+        # 提交更改
+        COMMIT_MESSAGE="自动更新: M3U播放列表 [$(date +'%Y-%m-%d %H:%M:%S')]"
+        git commit -m "$COMMIT_MESSAGE"
+        
+        # 推送到仓库
+        echo "正在推送到 ${{ github.ref }}..."
+        git push origin HEAD:${{ github.ref_name }}
+        
+        echo "✅ 更改已成功提交并推送！"
+        
+    - name: Skip commit if no changes
+      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'false'
+      run: |
+        echo "📝 文件内容没有变化，跳过提交。"
+        echo "当前live.m3u文件内容哈希:"
+        git hash-object live.m3u
+        
+    - name: Handle download failure
+      if: steps.download.outputs.has_changes == 'false'
+      run: |
+        echo "❌ 下载失败，工作流终止。"
+        exit 1
+        
+    - name: Final status report
+      run: |
+        echo "=== 工作流执行完成 ==="
+        echo "完成时间: $(date)"
+        echo "仓库: ${{ github.repository }}"
+        echo "执行结果: ${{ job.status }}"
