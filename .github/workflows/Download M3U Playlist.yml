@@ -10,136 +10,123 @@ on:
     paths:
       - '.github/workflows/download-m3u.yml'
 
-# 设置必要的权限
+# 设置写入权限
 permissions:
-  contents: write  # 允许写入仓库内容
-  actions: read    # 允许读取actions（可选）
-  checks: read     # 允许读取检查状态（可选）
+  contents: write
 
 jobs:
   download-m3u:
     runs-on: ubuntu-latest
     
-    # 也可以在job级别设置权限
-    permissions:
-      contents: write  # 这个job需要写入权限
-    
     steps:
-    - name: Checkout repository with write permissions
+    # 步骤1：检出仓库（使用具有写入权限的token）
+    - name: Checkout repository with write access
       uses: actions/checkout@v4
       with:
-        # 获取所有分支的历史记录
-        fetch-depth: 0
-        # 使用具有写入权限的token
         token: ${{ secrets.GITHUB_TOKEN }}
-        # 如果需要推送到其他分支，可以取消注释下面这行
-        # ref: main
-        
-    - name: Setup environment
-      run: |
-        echo "工作流开始时间: $(date)"
-        echo "仓库: ${{ github.repository }}"
-        echo "触发者: ${{ github.actor }}"
-        
+        fetch-depth: 0  # 获取完整历史
+    
+    # 步骤2：下载M3U文件
     - name: Download M3U playlist
       id: download
       run: |
-        echo "正在下载 M3U 播放列表..."
+        echo "开始下载M3U播放列表..."
         
-        # 下载 M3U 文件，添加超时和重试机制
-        curl -s -L --max-time 30 --retry 2 \
+        # 下载文件
+        curl -s -L --max-time 30 \
           "http://zizi.dpdns.org/cs.php?key=Ku0VIKlbNHX9&type=m3u" \
           -o live.m3u
           
-        # 检查下载是否成功
-        if [ $? -eq 0 ] && [ -f "live.m3u" ]; then
-          echo "✅ 文件下载成功！"
+        # 检查是否下载成功
+        if [ -f "live.m3u" ]; then
+          # 设置文件权限
+          chmod 664 live.m3u
           
           # 显示文件信息
-          LINE_COUNT=$(wc -l < live.m3u 2>/dev/null || echo "0")
-          echo "文件行数: $LINE_COUNT"
+          echo "✅ 下载成功！"
+          echo "文件大小: $(wc -l < live.m3u) 行"
+          echo "文件权限: $(stat -c "%a" live.m3u)"
           
-          # 设置文件权限为读写（664：rw-rw-r--）
-          chmod 664 live.m3u
-          echo "文件权限已设置为 664 (rw-rw-r--)"
-          
-          # 验证权限
-          echo "当前文件权限:"
-          ls -la live.m3u
-          
-          # 创建输出变量供后续步骤使用
-          echo "has_changes=true" >> $GITHUB_OUTPUT
-          
-          # 显示文件前几行（用于调试）
-          if [ $LINE_COUNT -gt 0 ]; then
-            echo "文件内容预览（前3行）:"
-            head -3 live.m3u
+          # 检查文件是否为空
+          if [ ! -s "live.m3u" ]; then
+            echo "⚠️ 警告：文件为空！"
           fi
         else
-          echo "❌ 文件下载失败！"
-          echo "has_changes=false" >> $GITHUB_OUTPUT
+          echo "❌ 下载失败"
           exit 1
         fi
-        
-    - name: Check for changes
-      if: steps.download.outputs.has_changes == 'true'
-      id: check-changes
+    
+    # 步骤3：配置Git
+    - name: Setup Git
       run: |
-        echo "检查文件是否有变化..."
-        
-        # 检查git状态
-        git status
-        
-        # 检查live.m3u文件是否有变化
-        if git diff --name-only | grep -q "live.m3u"; then
-          echo "检测到live.m3u有变化"
-          echo "file_changed=true" >> $GITHUB_OUTPUT
-        else
-          echo "live.m3u没有变化"
-          echo "file_changed=false" >> $GITHUB_OUTPUT
-        fi
-        
-    - name: Configure Git for committing
-      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'true'
-      run: |
-        echo "配置Git用户信息..."
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
-        
-    - name: Commit and push changes
-      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'true'
+    
+    # 步骤4：检查文件是否有变化
+    - name: Check for changes
+      id: check-changes
       run: |
-        echo "提交更改到仓库..."
+        echo "检查文件变化..."
+        
+        # 显示当前git状态
+        git status
+        
+        # 检查live.m3u文件是否已存在
+        if [ -f "live.m3u" ]; then
+          # 检查文件是否是新文件或被修改
+          if ! git diff --quiet live.m3u 2>/dev/null; then
+            echo "检测到live.m3u有变化"
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+          elif ! git ls-files --error-unmatch live.m3u >/dev/null 2>&1; then
+            echo "live.m3u是新文件"
+            echo "changes_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "live.m3u没有变化"
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "live.m3u文件不存在"
+          echo "changes_detected=false" >> $GITHUB_OUTPUT
+        fi
+    
+    # 步骤5：提交并推送更改
+    - name: Commit and push changes
+      if: steps.check-changes.outputs.changes_detected == 'true'
+      run: |
+        echo "提交更改..."
         
         # 添加文件到暂存区
         git add live.m3u
         
         # 提交更改
-        COMMIT_MESSAGE="自动更新: M3U播放列表 [$(date +'%Y-%m-%d %H:%M:%S')]"
+        COMMIT_MESSAGE="更新M3U播放列表 - $(date '+%Y-%m-%d %H:%M:%S')"
         git commit -m "$COMMIT_MESSAGE"
         
         # 推送到仓库
-        echo "正在推送到 ${{ github.ref }}..."
-        git push origin HEAD:${{ github.ref_name }}
+        echo "正在推送到仓库..."
+        git push
         
-        echo "✅ 更改已成功提交并推送！"
-        
-    - name: Skip commit if no changes
-      if: steps.download.outputs.has_changes == 'true' && steps.check-changes.outputs.file_changed == 'false'
+        echo "✅ 更改已成功推送！"
+    
+    # 步骤6：如果没有变化
+    - name: No changes to commit
+      if: steps.check-changes.outputs.changes_detected == 'false'
       run: |
-        echo "📝 文件内容没有变化，跳过提交。"
-        echo "当前live.m3u文件内容哈希:"
-        git hash-object live.m3u
+        echo "📝 没有检测到变化，跳过提交"
+        echo "当前文件状态:"
+        git status --short
         
-    - name: Handle download failure
-      if: steps.download.outputs.has_changes == 'false'
+    # 步骤7：验证文件已创建
+    - name: Verify file creation
       run: |
-        echo "❌ 下载失败，工作流终止。"
-        exit 1
-        
-    - name: Final status report
-      run: |
-        echo "=== 工作流执行完成 ==="
-        echo "完成时间: $(date)"
-        echo "仓库: ${{ github.repository }}"
-        echo "执行结果: ${{ job.status }}"
+        echo "验证文件状态..."
+        echo "当前目录:"
+        ls -la
+        echo "live.m3u详情:"
+        if [ -f "live.m3u" ]; then
+          ls -la live.m3u
+          echo "文件内容预览（前5行）:"
+          head -5 live.m3u
+        else
+          echo "❌ live.m3u文件不存在"
+        fi
