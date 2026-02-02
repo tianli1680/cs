@@ -1,14 +1,14 @@
-name: Download and Filter M3U Playlist
+name: Download M3U Playlist
 
 on:
   workflow_dispatch:  # 允许手动触发
   schedule:
     # 每天凌晨3点自动执行（UTC时间）
-    - cron: '0 4 * * *'
+    - cron: '0 */4 * * *'
   push:
-分支: [ main, master ]  # 修正这里
-  paths:
-    - '.github/workflows/download-m3u.yml'
+分支: [ main, master ]  # 修正：使用冒号而不是等号
+    paths:
+      - '.github/workflows/download-m3u.yml'
 
 permissions:
   contents: write
