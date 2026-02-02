@@ -1,4 +1,4 @@
-name: Download M3U Playlist
+name: Download and Filter M3U Playlist
 
 on:
   workflow_dispatch:  # 允许手动触发
@@ -10,96 +10,201 @@ on:
     paths:
       - '.github/workflows/download-m3u.yml'
 
-# 设置写入权限
 permissions:
   contents: write
 
 jobs:
-  download-m3u:
+  download-and-filter:
     runs-on: ubuntu-latest
     
     steps:
-    # 步骤1：检出仓库（使用具有写入权限的token）
-    - name: Checkout repository with write access
+    # 步骤1：检出仓库
+    - name: Checkout repository
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0  # 获取完整历史
+        fetch-depth: 0
     
-    # 步骤2：下载M3U文件
+    # 步骤2：下载原始M3U文件
     - name: Download M3U playlist
       id: download
       run: |
-        echo "开始下载M3U播放列表..."
+        echo "开始下载原始M3U播放列表..."
         
         # 下载文件
         curl -s -L --max-time 30 \
           "http://zizi.dpdns.org/cs.php?key=Ku0VIKlbNHX9&type=m3u" \
-          -o live.m3u
+          -o raw_live.m3u
           
         # 检查是否下载成功
-        if [ -f "live.m3u" ]; then
+        if [ -f "raw_live.m3u" ]; then
           # 设置文件权限
-          chmod 664 live.m3u
+          chmod 664 raw_live.m3u
           
           # 显示文件信息
-          echo "✅ 下载成功！"
-          echo "文件大小: $(wc -l < live.m3u) 行"
-          echo "文件权限: $(stat -c "%a" live.m3u)"
+          echo "✅ 原始文件下载成功！"
+          echo "原始文件大小: $(wc -l < raw_live.m3u) 行"
           
           # 检查文件是否为空
-          if [ ! -s "live.m3u" ]; then
-            echo "⚠️ 警告：文件为空！"
+          if [ ! -s "raw_live.m3u" ]; then
+            echo "⚠️ 警告：原始文件为空！"
+            exit 1
           fi
         else
-          echo "❌ 下载失败"
+          echo "❌ 原始文件下载失败"
           exit 1
         fi
     
-    # 步骤3：配置Git
+    # 步骤3：筛选卫视频道
+    - name: Filter satellite TV channels
+      id: filter
+      run: |
+        echo "开始筛选卫视频道..."
+        
+        # 定义要筛选的关键词（卫视相关）
+        KEYWORDS="卫视|CCTV|湖南卫视|浙江卫视|江苏卫视|东方卫视|北京卫视|广东卫视|深圳卫视|安徽卫视|山东卫视|天津卫视|湖北卫视|重庆卫视|四川卫视|黑龙江卫视|吉林卫视|辽宁卫视|河南卫视|东南卫视|江西卫视|广西卫视|贵州卫视|云南卫视|山西卫视|陕西卫视|甘肃卫视|青海卫视|宁夏卫视|新疆卫视|西藏卫视|内蒙古卫视|河北卫视|海南卫视"
+        
+        # 显示原始文件基本信息
+        echo "原始文件前5行:"
+        head -5 raw_live.m3u
+        
+        # 筛选包含卫视关键词的频道
+        echo "正在筛选包含卫视关键词的频道..."
+        
+        # 创建新的M3U文件，保留M3U头部信息
+        echo "#EXTM3U" > live.m3u
+        
+        # 使用grep筛选包含卫视关键词的行，并保留整个频道块
+        # M3U格式通常是一个EXTINF行跟着一个URL行
+        grep -i -E "$KEYWORDS" -A 1 -B 0 raw_live.m3u >> live.m3u
+        
+        # 另一种更精确的方法：逐行处理，保留完整的频道信息
+        echo "使用精确筛选方法..."
+        awk 'BEGIN {RS="#EXTINF"; ORS="#EXTINF"} /'"$KEYWORDS"'/ {print}' raw_live.m3u | grep -v "^$" > temp.m3u
+        if [ -s "temp.m3u" ]; then
+          echo "#EXTM3U" > live.m3u
+          cat temp.m3u >> live.m3u
+        fi
+        
+        # 清理临时文件
+        rm -f temp.m3u
+        
+        # 检查筛选结果
+        if [ -f "live.m3u" ] && [ -s "live.m3u" ]; then
+          # 设置文件权限
+          chmod 664 live.m3u
+          
+          # 统计信息
+          ORIGINAL_COUNT=$(grep -c "^#EXTINF" raw_live.m3u || echo "0")
+          FILTERED_COUNT=$(grep -c "^#EXTINF" live.m3u || echo "0")
+          
+          echo "✅ 筛选完成！"
+          echo "原始频道数: $ORIGINAL_COUNT"
+          echo "筛选后频道数: $FILTERED_COUNT"
+          
+          # 显示筛选后的频道列表
+          echo "筛选出的频道列表:"
+          grep -i "^#EXTINF.*:" live.m3u | head -20
+          
+          if [ $FILTERED_COUNT -eq 0 ]; then
+            echo "⚠️ 警告：没有筛选到任何卫视频道"
+            echo "使用原始文件作为备份..."
+            cp raw_live.m3u live.m3u
+            chmod 664 live.m3u
+          fi
+          
+          # 创建统计信息文件
+          echo "生成统计信息..."
+          echo "更新时间: $(date '+%Y-%m-%d %H:%M:%S')" > stats.txt
+          echo "原始频道数: $ORIGINAL_COUNT" >> stats.txt
+          echo "卫视频道数: $FILTERED_COUNT" >> stats.txt
+          echo "筛选关键词: $KEYWORDS" >> stats.txt
+          chmod 664 stats.txt
+          
+        else
+          echo "❌ 筛选失败，使用原始文件"
+          cp raw_live.m3u live.m3u
+          chmod 664 live.m3u
+        fi
+        
+        echo "最终文件大小: $(wc -l < live.m3u) 行"
+    
+    # 步骤4：创建分类文件（可选）
+    - name: Create categorized files
+      run: |
+        echo "创建分类文件..."
+        
+        # 创建央视分类
+        if grep -i -q "CCTV" raw_live.m3u; then
+          echo "#EXTM3U" > cctv.m3u
+          grep -i "CCTV" -A 1 -B 0 raw_live.m3u >> cctv.m3u
+          chmod 664 cctv.m3u
+          CCTV_COUNT=$(grep -c "^#EXTINF" cctv.m3u || echo "0")
+          echo "央视频道数: $CCTV_COUNT"
+        fi
+        
+        # 创建地方卫视分类
+        if grep -i -q "卫视" raw_live.m3u; then
+          echo "#EXTM3U" > local_satellite.m3u
+          grep -i "卫视" -A 1 -B 0 raw_live.m3u >> local_satellite.m3u
+          chmod 664 local_satellite.m3u
+          LOCAL_COUNT=$(grep -c "^#EXTINF" local_satellite.m3u || echo "0")
+          echo "地方卫视数: $LOCAL_COUNT"
+        fi
+    
+    # 步骤5：配置Git
     - name: Setup Git
       run: |
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         git config --global user.name "github-actions[bot]"
     
-    # 步骤4：检查文件是否有变化
+    # 步骤6：检查文件变化
     - name: Check for changes
       id: check-changes
       run: |
         echo "检查文件变化..."
         
-        # 显示当前git状态
-        git status
+        # 检查哪些文件有变化
+        CHANGED_FILES=""
         
-        # 检查live.m3u文件是否已存在
-        if [ -f "live.m3u" ]; then
-          # 检查文件是否是新文件或被修改
-          if ! git diff --quiet live.m3u 2>/dev/null; then
-            echo "检测到live.m3u有变化"
-            echo "changes_detected=true" >> $GITHUB_OUTPUT
-          elif ! git ls-files --error-unmatch live.m3u >/dev/null 2>&1; then
-            echo "live.m3u是新文件"
-            echo "changes_detected=true" >> $GITHUB_OUTPUT
-          else
-            echo "live.m3u没有变化"
-            echo "changes_detected=false" >> $GITHUB_OUTPUT
+        for file in live.m3u raw_live.m3u stats.txt cctv.m3u local_satellite.m3u; do
+          if [ -f "$file" ]; then
+            if ! git diff --quiet "$file" 2>/dev/null; then
+              echo "检测到 $file 有变化"
+              CHANGED_FILES="$CHANGED_FILES $file"
+            elif ! git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+              echo "$file 是新文件"
+              CHANGED_FILES="$CHANGED_FILES $file"
+            fi
           fi
+        done
+        
+        if [ -n "$CHANGED_FILES" ]; then
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+          echo "changed_files=$CHANGED_FILES" >> $GITHUB_OUTPUT
         else
-          echo "live.m3u文件不存在"
           echo "changes_detected=false" >> $GITHUB_OUTPUT
         fi
+        
+        echo "当前Git状态:"
+        git status --short
     
-    # 步骤5：提交并推送更改
+    # 步骤7：提交并推送更改
     - name: Commit and push changes
       if: steps.check-changes.outputs.changes_detected == 'true'
       run: |
         echo "提交更改..."
         
-        # 添加文件到暂存区
-        git add live.m3u
+        # 添加所有相关文件
+        git add live.m3u raw_live.m3u stats.txt
+        
+        # 添加分类文件（如果存在）
+        [ -f "cctv.m3u" ] && git add cctv.m3u
+        [ -f "local_satellite.m3u" ] && git add local_satellite.m3u
         
         # 提交更改
-        COMMIT_MESSAGE="更新M3U播放列表 - $(date '+%Y-%m-%d %H:%M:%S')"
+        FILTERED_COUNT=$(grep -c "^#EXTINF" live.m3u || echo "0")
+        COMMIT_MESSAGE="更新M3U播放列表 - 筛选出$FILTERED_COUNT个卫视频道 - $(date '+%Y-%m-%d %H:%M:%S')"
         git commit -m "$COMMIT_MESSAGE"
         
         # 推送到仓库
@@ -108,25 +213,31 @@ jobs:
         
         echo "✅ 更改已成功推送！"
     
-    # 步骤6：如果没有变化
+    # 步骤8：如果没有变化
     - name: No changes to commit
       if: steps.check-changes.outputs.changes_detected == 'false'
       run: |
         echo "📝 没有检测到变化，跳过提交"
-        echo "当前文件状态:"
-        git status --short
-        
-    # 步骤7：验证文件已创建
-    - name: Verify file creation
+        echo "文件状态:"
+        ls -la *.m3u stats.txt 2>/dev/null || echo "没有相关文件"
+    
+    # 步骤9：最终验证
+    - name: Final verification
       run: |
-        echo "验证文件状态..."
-        echo "当前目录:"
-        ls -la
-        echo "live.m3u详情:"
+        echo "=== 工作流执行结果 ==="
+        echo "完成时间: $(date)"
+        
         if [ -f "live.m3u" ]; then
-          ls -la live.m3u
-          echo "文件内容预览（前5行）:"
-          head -5 live.m3u
+          echo "✅ live.m3u 已创建"
+          echo "文件行数: $(wc -l < live.m3u)"
+          echo "频道数量: $(grep -c "^#EXTINF" live.m3u || echo "0")"
+          echo "文件内容示例:"
+          grep -i "^#EXTINF" live.m3u | head -10
         else
-          echo "❌ live.m3u文件不存在"
+          echo "❌ live.m3u 未创建"
+        fi
+        
+        if [ -f "stats.txt" ]; then
+          echo "统计信息:"
+          cat stats.txt
         fi
